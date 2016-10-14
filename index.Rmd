@@ -1,22 +1,121 @@
 ---
 title: "Practical Machine Learning Course Project"
-author: "Abel Pardo López"
-date: "8 de octubre de 2016"
+author: "Abel Pardo L?pez"
+date: "13 de octubre de 2016"
 output: html_document
 ---
+## Overview
+The objective of this document is to make a model with allow to predict the [Human Activity Recognitiog](http://groupware.les.inf.puc-rio.br/har), of Weight Lifting Exercise. This data consist in several measures of accelerometers in dumbbell, arm, forearm and belt. With this measures is asked to predict the quality of the exercise. The exercises are classified from A to E. Being A exactly according to the specification and B to E different types of errors.
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+```{r libraries,echo=FALSE,cache=FALSE,warning=FALSE,results="hide",messages=FALSE,error=FALSE,warning=FALSE,collapse=TRUE, tidy=TRUE}
+library(dplyr,quietly=TRUE, warn.conflicts = FALSE)
+library(tidyr,quietly=TRUE, warn.conflicts = FALSE)
+library(readr,quietly=TRUE, warn.conflicts = FALSE)
+library(stats,quietly=TRUE, warn.conflicts = FALSE)
+library(caret,quietly=TRUE, warn.conflicts = FALSE)
+```  
+The training data can be dowloaded from <https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv>
+The test data that is asked to classify can be downloaded from <https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv>
 
-```{r}
-summary(cars)
+```{r setwd,echo=FALSE,warning=FALSE,results='hide',messages=FALSE}
+setwd("C:\\Users\\ABEL\\Downloads\\Coursera\\08-Machine-Learning\\project-1")
+```  
+Data was downloaded to the computer and read with the following commands:
+```{r Read,echo=FALSE,warning=FALSE,messages=FALSE}
+training<-read_csv('./pml-training.csv')
+testing<-read_csv('./pml-testing.csv')
+```  
+
+## Clean
+
+In this section it has been explored the data and eliminated the columns and rows that are not useful to the learning and prediction.
+In following lines are shown the dimensions of the dataset and the column `classe`is factored. 
+```{r dim, CACHE=TRUE}
+dim(training)
+training$classe<-factor(training$classe)
+```  
+After reviewing the dataset it has been seen a lot of columns with N/A and DIV/0. Most of the corresponds to statiscal data of accellerometer time windows. This data only appears in a maximum of aprox. 4o6 rows from 19622. Therefore it has been eliminated those rows and columns.
+```{r eliminate, cache=TRUE}
+training2<-training %>% filter(new_window=="no") %>% select(-X1,-user_name,-new_window,-num_window) 
+list_stat_index=c(grep("avg",names(training2)),grep("max",names(training2)),grep("min",names(training2)),
+                  grep("stddev",names(training2)),grep("skewness",names(training2),"skewness"),
+                  grep("kurtosis",names(training2)),grep("var",names(training2)),grep("amplitude",names(training2)),
+                  grep("timestamp",names(training2)))
+training3<-training2 %>% select(-list_stat_index)
 ```
+ Also it hsa been eliminated the variables corresponding to `X1`, `user_name`, `new_window` and `num_window`. Corresponding to row number, dumbbell user, the indication of change of data windows, and the number of data of the window. The last columns than has been eliminated are the related with the `timestamp` because it has not be seen any relationship between the `classe`and the time. 
+ A final check has been done to be sure no N/A rows appears.
+```{r checkNA, cache=TRUE}
+M<-sapply(training3, function(x) sum(is.na(x)))
+M[M>0]
+training3<-training3 %>% filter(!is.na(magnet_dumbbell_z))%>% filter(!is.na(magnet_forearm_y)) %>% filter(!is.na(magnet_forearm_y))
+```  
+After the review of training data set the same cleaning is done in the test set, to allow the prediction posteriously.
+```{r classes, cache=TRUE}
+testing2<-testing %>% select(-X1,-user_name,-new_window,-num_window) 
+testing3<-testing2 %>%select(-list_stat_index)
+```  
+## Explore
 
-You can also embed plots, for example:
+After the cleaning of the dataset it can be seen the general statistical properties of the  dataset.
+```{r summary, cache=TRUE}
+summary(training3)
+```  
+To be sure than the classes are enoughly represented in the dataset and is not required up or down sampling, it has been checked the number of time each class appears.
+```{r table, cache=TRUE}
+table(training3$classe) # To know if the data set is equillibred
+```  
+It was considered than the training set has the enough data for each class.  
+The data set it is too big in number of variables and rows. To allow a quicker exploration, a sampling of 1000 rows was 
+```{r boxplot,cache=TRUE, fig.x=20, fig.y=20}
+# Box Plot of all variables
+set.seed(3141592)
+tr4<-sample_n(training3,1000)
+p<-featurePlot(x = tr4[, 1:52], 
+            y = tr4$classe, 
+            plot = "box",scales=list(y=list(relation="free"),x=list(rot=90)),layout=c(7,8),
+            auto.key = list(columns = 5))
+print(p)
+```  
+  
+Other plots were done to check than no wrong data was in the dataset. 
+## Training 
+After the selection of the features, and taking into account the number of rows. It was decide to train with 75 % of the data, and left the 25 % to cross-validate the results.
+```{r partition,cache=TRUE}
+set.seed(314159)
+intrain<-createDataPartition(y=training3$classe,p=0.75,list=FALSE)
+trainingSet<-training3[intrain,]
+testSet<-training3[-intrain,]
+```  
+The method chosen for the classification was randomforest in part due to it is a good method for multiple classification and in part due to than in the paper [Qualitative Activity Recognition of Weight Lifting Exercises](http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201), than is in the page of the information of project, use a similar approach. 
+```{r model,cache=TRUE, eval=FALSE}
+modFit<-train(classe~.,data=trainingSet,method="rf",prox=TRUE)
+```  
+The training is not run to generate this R Markdown due to it took near 7 hour in my computer. The model was saved using following code:
+```{r modelSave,cache=TRUE, eval=FALSE}
+save(modFit,"modelFitRandomForest")
+```  
+And the modelFit is read for the rest of the R Markdow with the following code:
+```{r modelLoad,cache=TRUE}
+load("modelFitRandomForest")
+```  
+# Predict
+After the training is done we have done the cross-validation with the testSet.
+```{r,cache=TRUE}
+result<-predict(modFit,testSet)
+confusionMatrix(result,testSet$classe)
+```  
+As it can be seen in previous table the results are nearly perfect, with 4 error of the total of 4802 predictions.
+In following graphs can be seen, checking the error with the number of trees and the variable imporance, than the training time can be improve reducing number of trees and variables. 
 
-```{r, echo=FALSE}
-plot(cars)
+```{r,cache=TRUE, fig.x=20, fig.y=20}
+plot(modFit$finalModel)
+plot(varImp(modFit))
 ```
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+# Predict Testing set
+Finally the result asked values, without classification are obtained:
+```{r,cache=TRUE}
+resultTesting<-predict(modFit,testing3)
+resultTesting
+```
